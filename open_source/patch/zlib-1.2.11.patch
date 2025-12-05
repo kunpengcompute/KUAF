@@ -1,0 +1,1446 @@
+diff -Naru zlib/compress.c zlib-new/compress.c
+--- zlib/compress.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/compress.c	2025-05-22 19:41:49.790533700 +0800
+@@ -19,7 +19,7 @@
+    memory, Z_BUF_ERROR if there was not enough room in the output buffer,
+    Z_STREAM_ERROR if the level parameter is invalid.
+ */
+-int ZEXPORT compress2 (dest, destLen, source, sourceLen, level)
++int ZEXPORT lz_compress2 (dest, destLen, source, sourceLen, level)
+     Bytef *dest;
+     uLongf *destLen;
+     const Bytef *source;
+@@ -28,7 +28,7 @@
+ {
+     z_stream stream;
+     int err;
+-    const uInt max = (uInt)-1;
++    const uInt max = ((uInt)-1) - 3; // make sure its multiples of 4B
+     uLong left;
+ 
+     left = *destLen;
+@@ -38,7 +38,7 @@
+     stream.zfree = (free_func)0;
+     stream.opaque = (voidpf)0;
+ 
+-    err = deflateInit(&stream, level);
++    err = lz_deflateInit(&stream, level);
+     if (err != Z_OK) return err;
+ 
+     stream.next_out = dest;
+@@ -55,32 +55,36 @@
+             stream.avail_in = sourceLen > (uLong)max ? max : (uInt)sourceLen;
+             sourceLen -= stream.avail_in;
+         }
+-        err = deflate(&stream, sourceLen ? Z_NO_FLUSH : Z_FINISH);
++        err = lz_deflate(&stream, sourceLen ? Z_NO_FLUSH : Z_FINISH);
+     } while (err == Z_OK);
+ 
+     *destLen = stream.total_out;
+-    deflateEnd(&stream);
++    lz_deflateEnd(&stream);
+     return err == Z_STREAM_END ? Z_OK : err;
+ }
+ 
+ /* ===========================================================================
+  */
+-int ZEXPORT compress (dest, destLen, source, sourceLen)
++int ZEXPORT lz_compress (dest, destLen, source, sourceLen)
+     Bytef *dest;
+     uLongf *destLen;
+     const Bytef *source;
+     uLong sourceLen;
+ {
+-    return compress2(dest, destLen, source, sourceLen, Z_DEFAULT_COMPRESSION);
++    return lz_compress2(dest, destLen, source, sourceLen, Z_DEFAULT_COMPRESSION);
+ }
+ 
+ /* ===========================================================================
+      If the default memLevel or windowBits for deflateInit() is changed, then
+    this function needs to be updated.
+  */
+-uLong ZEXPORT compressBound (sourceLen)
++uLong ZEXPORT lz_compressBound (sourceLen)
+     uLong sourceLen;
+ {
++#ifdef CONF_KAEZIP
++    return sourceLen + (sourceLen >> 3) + 13;
++#else
+     return sourceLen + (sourceLen >> 12) + (sourceLen >> 14) +
+-           (sourceLen >> 25) + 13;
++        (sourceLen >> 25) + 13;
++#endif
+ }
+diff -Naru zlib/configure zlib-new/configure
+--- zlib/configure	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/configure	2025-05-22 19:41:49.790533700 +0800
+@@ -37,7 +37,7 @@
+ fi
+ 
+ # destination name for static library
+-STATICLIB=libz.a
++STATICLIB=libz_sw.a
+ 
+ # extract zlib version numbers from zlib.h
+ VER=`sed -n -e '/VERSION "/s/.*"\(.*\)".*/\1/p' < ${SRCDIR}zlib.h`
+@@ -208,7 +208,7 @@
+   fi
+   case "$uname" in
+   Linux* | linux* | GNU | GNU/* | solaris*)
+-        LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz.so.1,--version-script,${SRCDIR}zlib.map"} ;;
++        LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz_sw.so.1,--version-script,${SRCDIR}zlib.map"} ;;
+   *BSD | *bsd* | DragonFly)
+         LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz.so.1,--version-script,${SRCDIR}zlib.map"}
+         LDCONFIG="ldconfig -m" ;;
+@@ -345,9 +345,9 @@
+ fi
+ 
+ # destination names for shared library if not defined above
+-SHAREDLIB=${SHAREDLIB-"libz$shared_ext"}
+-SHAREDLIBV=${SHAREDLIBV-"libz$shared_ext.$VER"}
+-SHAREDLIBM=${SHAREDLIBM-"libz$shared_ext.$VER1"}
++SHAREDLIB=${SHAREDLIB-"libz_sw$shared_ext"}
++SHAREDLIBV=${SHAREDLIBV-"libz_sw$shared_ext.$VER"}
++SHAREDLIBM=${SHAREDLIBM-"libz_sw$shared_ext.$VER1"}
+ 
+ echo >> configure.log
+ 
+diff -Naru zlib/contrib/minizip/zip.c zlib-new/contrib/minizip/zip.c
+--- zlib/contrib/minizip/zip.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/contrib/minizip/zip.c	2025-05-22 19:41:49.790533700 +0800
+@@ -1218,7 +1218,7 @@
+           if (windowBits>0)
+               windowBits = -windowBits;
+ 
+-          err = deflateInit2(&zi->ci.stream, level, Z_DEFLATED, windowBits, memLevel, strategy);
++          err = lz_deflateInit2(&zi->ci.stream, level, Z_DEFLATED, windowBits, memLevel, strategy);
+ 
+           if (err==Z_OK)
+               zi->ci.stream_initialised = Z_DEFLATED;
+@@ -1470,7 +1470,7 @@
+           if ((zi->ci.method == Z_DEFLATED) && (!zi->ci.raw))
+           {
+               uLong uTotalOutBefore = zi->ci.stream.total_out;
+-              err=deflate(&zi->ci.stream,  Z_NO_FLUSH);
++              err=lz_deflate(&zi->ci.stream,  Z_NO_FLUSH);
+               if(uTotalOutBefore > zi->ci.stream.total_out)
+               {
+                 int bBreak = 0;
+@@ -1582,7 +1582,7 @@
+ 
+     if ((zi->ci.method == Z_DEFLATED) && (!zi->ci.raw))
+     {
+-        int tmp_err = deflateEnd(&zi->ci.stream);
++        int tmp_err = lz_deflateEnd(&zi->ci.stream);
+         if (err == ZIP_OK)
+             err = tmp_err;
+         zi->ci.stream_initialised = 0;
+diff -Naru zlib/contrib/testzlib/testzlib.c zlib-new/contrib/testzlib/testzlib.c
+--- zlib/contrib/testzlib/testzlib.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/contrib/testzlib/testzlib.c	2025-05-22 19:41:49.790533700 +0800
+@@ -195,7 +195,7 @@
+         long lOrigDone = 0;
+         int step=0;
+         memset(&zcpr,0,sizeof(z_stream));
+-        deflateInit(&zcpr,cprLevel);
++        lz_deflateInit(&zcpr,cprLevel);
+ 
+         zcpr.next_in = FilePtr;
+         zcpr.next_out = CprPtr;
+@@ -206,14 +206,14 @@
+             long all_read_before = zcpr.total_in;
+             zcpr.avail_in = min(lOrigToDo,BlockSizeCompress);
+             zcpr.avail_out = BlockSizeCompress;
+-            ret=deflate(&zcpr,(zcpr.avail_in==lOrigToDo) ? Z_FINISH : Z_SYNC_FLUSH);
++            ret=lz_deflate(&zcpr,(zcpr.avail_in==lOrigToDo) ? Z_FINISH : Z_SYNC_FLUSH);
+             lOrigDone += (zcpr.total_in-all_read_before);
+             lOrigToDo -= (zcpr.total_in-all_read_before);
+             step++;
+         } while (ret==Z_OK);
+ 
+         lSizeCpr=zcpr.total_out;
+-        deflateEnd(&zcpr);
++        lz_deflateEnd(&zcpr);
+         dwGetTick=GetTickCount()-dwGetTick;
+         dwMsecQP=GetMsecSincePerfCounter(li_qp,TRUE);
+         dwResRdtsc=GetResRdtsc(li_rdtsc,TRUE);
+@@ -236,7 +236,7 @@
+         long lOrigDone = 0;
+         int step=0;
+         memset(&zcpr,0,sizeof(z_stream));
+-        inflateInit(&zcpr);
++        lz_inflateInit(&zcpr);
+ 
+         zcpr.next_in = CprPtr;
+         zcpr.next_out = UncprPtr;
+diff -Naru zlib/deflate.c zlib-new/deflate.c
+--- zlib/deflate.c	2025-05-22 19:39:46.194533700 +0800
++++ zlib-new/deflate.c	2025-05-22 19:45:09.258533700 +0800
+@@ -225,19 +225,19 @@
+ }
+ 
+ /* ========================================================================= */
+-int ZEXPORT deflateInit_(strm, level, version, stream_size)
++int ZEXPORT lz_deflateInit_(strm, level, version, stream_size)
+     z_streamp strm;
+     int level;
+     const char *version;
+     int stream_size;
+ {
+-    return deflateInit2_(strm, level, Z_DEFLATED, MAX_WBITS, DEF_MEM_LEVEL,
++    return lz_deflateInit2_(strm, level, Z_DEFLATED, MAX_WBITS, DEF_MEM_LEVEL,
+                          Z_DEFAULT_STRATEGY, version, stream_size);
+     /* To do: ignore strm->next_in if we use it as window */
+ }
+ 
+ /* ========================================================================= */
+-int ZEXPORT deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
++int ZEXPORT lz_deflateInit2_(strm, level, method, windowBits, memLevel, strategy,
+                   version, stream_size)
+     z_streamp strm;
+     int  level;
+@@ -367,7 +367,7 @@
+         s->pending_buf == Z_NULL) {
+         s->status = FINISH_STATE;
+         strm->msg = ERR_MSG(Z_MEM_ERROR);
+-        deflateEnd (strm);
++        lz_deflateEnd (strm);
+         return Z_MEM_ERROR;
+     }
+     s->sym_buf = s->pending_buf + s->lit_bufsize;
+@@ -381,7 +381,7 @@
+     s->strategy = strategy;
+     s->method = (Byte)method;
+ 
+-    return deflateReset(strm);
++    return lz_deflateReset(strm);
+ }
+ 
+ /* =========================================================================
+@@ -539,7 +539,7 @@
+ }
+ 
+ /* ========================================================================= */
+-int ZEXPORT deflateReset (strm)
++int ZEXPORT lz_deflateReset (strm)
+     z_streamp strm;
+ {
+     int ret;
+@@ -550,6 +550,8 @@
+     return ret;
+ }
+ 
++uLong ZEXPORT lz_deflateBound(z_streamp strm, uLong sourceLen);
++
+ /* ========================================================================= */
+ int ZEXPORT deflateSetHeader (strm, head)
+     z_streamp strm;
+@@ -627,7 +629,7 @@
+     if ((strategy != s->strategy || func != configuration_table[level].func) &&
+         s->high_water) {
+         /* Flush the last buffer: */
+-        int err = deflate(strm, Z_BLOCK);
++        int err = lz_deflate(strm, Z_BLOCK);
+         if (err == Z_STREAM_ERROR)
+             return err;
+         if (strm->avail_out == 0)
+@@ -687,7 +689,7 @@
+  * upper bound of about 14% expansion does not seem onerous for output buffer
+  * allocation.
+  */
+-uLong ZEXPORT deflateBound(strm, sourceLen)
++uLong ZEXPORT lz_deflateBound(strm, sourceLen)
+     z_streamp strm;
+     uLong sourceLen;
+ {
+@@ -798,7 +800,8 @@
+     } while (0)
+ 
+ /* ========================================================================= */
+-int ZEXPORT deflate (strm, flush)
++
++int ZEXPORT lz_deflate (strm, flush)
+     z_streamp strm;
+     int flush;
+ {
+@@ -1111,9 +1114,11 @@
+ }
+ 
+ /* ========================================================================= */
+-int ZEXPORT deflateEnd (strm)
++
++int ZEXPORT lz_deflateEnd (strm)
+     z_streamp strm;
+ {
++
+     int status;
+ 
+     if (deflateStateCheck(strm)) return Z_STREAM_ERROR;
+@@ -1129,6 +1134,7 @@
+     ZFREE(strm, strm->state);
+     strm->state = Z_NULL;
+ 
++
+     return status == BUSY_STATE ? Z_DATA_ERROR : Z_OK;
+ }
+ 
+@@ -1169,7 +1175,7 @@
+ 
+     if (ds->window == Z_NULL || ds->prev == Z_NULL || ds->head == Z_NULL ||
+         ds->pending_buf == Z_NULL) {
+-        deflateEnd (dest);
++        lz_deflateEnd (dest);
+         return Z_MEM_ERROR;
+     }
+     /* following zmemcpy do not work for 16-bit MSDOS */
+diff -Naru zlib/deflate.h zlib-new/deflate.h
+--- zlib/deflate.h	2025-05-22 19:39:46.194533700 +0800
++++ zlib-new/deflate.h	2025-05-22 19:41:49.790533700 +0800
+@@ -267,7 +267,8 @@
+      * longest match routines access bytes past the input.  This is then
+      * updated to the new high water mark.
+      */
+-
++    ulg kaezip_ctx; /* kunpeng kaezip context */
++    ulg sche_ctx;   /* KUAF scheduler_ctx */    
+ } FAR deflate_state;
+ 
+ /* Output a byte on the stream.
+diff -Naru zlib/examples/fitblk.c zlib-new/examples/fitblk.c
+--- zlib/examples/fitblk.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/examples/fitblk.c	2025-05-22 19:41:49.790533700 +0800
+@@ -83,7 +83,7 @@
+         def->next_in = raw;
+         if (feof(in))
+             flush = Z_FINISH;
+-        ret = deflate(def, flush);
++        ret = lz_deflate(def, flush);
+         assert(ret != Z_STREAM_ERROR);
+     } while (def->avail_out != 0 && flush == Z_NO_FLUSH);
+     return ret;
+@@ -103,7 +103,7 @@
+         /* decompress */
+         inf->avail_out = RAWLEN;
+         inf->next_out = raw;
+-        ret = inflate(inf, Z_NO_FLUSH);
++        ret = lz_inflate(inf, Z_NO_FLUSH);
+         assert(ret != Z_STREAM_ERROR && ret != Z_DATA_ERROR &&
+                ret != Z_NEED_DICT);
+         if (ret == Z_MEM_ERROR)
+@@ -114,7 +114,7 @@
+         def->next_in = raw;
+         if (inf->avail_out != 0)
+             flush = Z_FINISH;
+-        ret = deflate(def, flush);
++        ret = lz_deflate(def, flush);
+         assert(ret != Z_STREAM_ERROR);
+     } while (ret != Z_STREAM_END && def->avail_out != 0);
+     return ret;
+@@ -148,7 +148,7 @@
+     def.zalloc = Z_NULL;
+     def.zfree = Z_NULL;
+     def.opaque = Z_NULL;
+-    ret = deflateInit(&def, Z_DEFAULT_COMPRESSION);
++    ret = lz_deflateInit(&def, Z_DEFAULT_COMPRESSION);
+     if (ret != Z_OK || blk == NULL)
+         quit("out of memory");
+ 
+@@ -167,7 +167,7 @@
+             quit("error writing output");
+ 
+         /* clean up and print results to stderr */
+-        ret = deflateEnd(&def);
++        ret = lz_deflateEnd(&def);
+         assert(ret != Z_STREAM_ERROR);
+         free(blk);
+         fprintf(stderr,
+@@ -182,11 +182,11 @@
+     inf.opaque = Z_NULL;
+     inf.avail_in = 0;
+     inf.next_in = Z_NULL;
+-    ret = inflateInit(&inf);
++    ret = lz_inflateInit(&inf);
+     tmp = malloc(size + EXCESS);
+     if (ret != Z_OK || tmp == NULL)
+         quit("out of memory");
+-    ret = deflateReset(&def);
++    ret = lz_deflateReset(&def);
+     assert(ret != Z_STREAM_ERROR);
+ 
+     /* do first recompression close to the right amount */
+@@ -199,9 +199,9 @@
+         quit("out of memory");
+ 
+     /* set up for next reocmpression */
+-    ret = inflateReset(&inf);
++    ret = lz_inflateReset(&inf);
+     assert(ret != Z_STREAM_ERROR);
+-    ret = deflateReset(&def);
++    ret = lz_deflateReset(&def);
+     assert(ret != Z_STREAM_ERROR);
+ 
+     /* do second and final recompression (third compression) */
+@@ -221,9 +221,9 @@
+ 
+     /* clean up and print results to stderr */
+     free(tmp);
+-    ret = inflateEnd(&inf);
++    ret = lz_inflateEnd(&inf);
+     assert(ret != Z_STREAM_ERROR);
+-    ret = deflateEnd(&def);
++    ret = lz_deflateEnd(&def);
+     assert(ret != Z_STREAM_ERROR);
+     free(blk);
+     fprintf(stderr,
+diff -Naru zlib/examples/gzappend.c zlib-new/examples/gzappend.c
+--- zlib/examples/gzappend.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/examples/gzappend.c	2025-05-22 19:41:49.790533700 +0800
+@@ -365,7 +365,7 @@
+     }
+ 
+     /* set up deflate stream with window, crc, total_in, and leftover bits */
+-    ret = deflateInit2(strm, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
++    ret = lz_deflateInit2(strm, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
+     if (ret != Z_OK) bye("out of memory", "");
+     deflateSetDictionary(strm, window, have);
+     strm->adler = crc;
+@@ -423,7 +423,7 @@
+         do {
+             strm->avail_out = CHUNK;
+             strm->next_out = out;
+-            ret = deflate(strm, last && len == 0 ? Z_FINISH : Z_NO_FLUSH);
++            ret = lz_deflate(strm, last && len == 0 ? Z_FINISH : Z_NO_FLUSH);
+             left = CHUNK - strm->avail_out;
+             while (left) {
+                 len = write(gd, out + CHUNK - strm->avail_out - left, left);
+@@ -435,7 +435,7 @@
+ 
+     /* write trailer after last entry */
+     if (last) {
+-        deflateEnd(strm);
++        lz_deflateEnd(strm);
+         out[0] = (unsigned char)(strm->adler);
+         out[1] = (unsigned char)(strm->adler >> 8);
+         out[2] = (unsigned char)(strm->adler >> 16);
+diff -Naru zlib/examples/gzlog.c zlib-new/examples/gzlog.c
+--- zlib/examples/gzlog.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/examples/gzlog.c	2025-05-22 19:41:49.790533700 +0800
+@@ -620,7 +620,7 @@
+         strm.zalloc = Z_NULL;
+         strm.zfree = Z_NULL;
+         strm.opaque = Z_NULL;
+-        if (deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8,
++        if (lz_deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8,
+                          Z_DEFAULT_STRATEGY) != Z_OK)
+             return -2;
+ 
+@@ -631,7 +631,7 @@
+             dict = read(fd, buf, DICT);
+             close(fd);
+             if (dict < 0) {
+-                deflateEnd(&strm);
++                lz_deflateEnd(&strm);
+                 return -1;
+             }
+             if (dict)
+@@ -644,7 +644,7 @@
+         if (lseek(log->fd, log->first - (log->back > 8 ? 2 : 1),
+                 SEEK_SET) < 0 ||
+             read(log->fd, buf, 1) != 1 || lseek(log->fd, -1, SEEK_CUR) < 0) {
+-            deflateEnd(&strm);
++            lz_deflateEnd(&strm);
+             return -1;
+         }
+         deflatePrime(&strm, (8 - log->back) & 7, *buf);
+@@ -658,16 +658,16 @@
+             do {
+                 strm.avail_out = DICT;
+                 strm.next_out = buf;
+-                deflate(&strm, len ? Z_NO_FLUSH : Z_PARTIAL_FLUSH);
++                lz_deflate(&strm, len ? Z_NO_FLUSH : Z_PARTIAL_FLUSH);
+                 got = DICT - strm.avail_out;
+                 if (got && write(log->fd, buf, got) != got) {
+-                    deflateEnd(&strm);
++                    lz_deflateEnd(&strm);
+                     return -1;
+                 }
+                 log_touch(log);
+             } while (strm.avail_out == 0);
+         } while (len);
+-        deflateEnd(&strm);
++        lz_deflateEnd(&strm);
+         BAIL(5);
+ 
+         /* find start of empty static block -- scanning backwards the first one
+diff -Naru zlib/examples/zpipe.c zlib-new/examples/zpipe.c
+--- zlib/examples/zpipe.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/examples/zpipe.c	2025-05-22 19:41:49.790533700 +0800
+@@ -45,7 +45,7 @@
+     strm.zalloc = Z_NULL;
+     strm.zfree = Z_NULL;
+     strm.opaque = Z_NULL;
+-    ret = deflateInit(&strm, level);
++    ret = lz_deflateInit(&strm, level);
+     if (ret != Z_OK)
+         return ret;
+ 
+@@ -53,7 +53,7 @@
+     do {
+         strm.avail_in = fread(in, 1, CHUNK, source);
+         if (ferror(source)) {
+-            (void)deflateEnd(&strm);
++            (void)lz_deflateEnd(&strm);
+             return Z_ERRNO;
+         }
+         flush = feof(source) ? Z_FINISH : Z_NO_FLUSH;
+@@ -64,11 +64,11 @@
+         do {
+             strm.avail_out = CHUNK;
+             strm.next_out = out;
+-            ret = deflate(&strm, flush);    /* no bad return value */
++            ret = lz_deflate(&strm, flush);    /* no bad return value */
+             assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
+             have = CHUNK - strm.avail_out;
+             if (fwrite(out, 1, have, dest) != have || ferror(dest)) {
+-                (void)deflateEnd(&strm);
++                (void)lz_deflateEnd(&strm);
+                 return Z_ERRNO;
+             }
+         } while (strm.avail_out == 0);
+@@ -79,7 +79,7 @@
+     assert(ret == Z_STREAM_END);        /* stream will be complete */
+ 
+     /* clean up and return */
+-    (void)deflateEnd(&strm);
++    (void)lz_deflateEnd(&strm);
+     return Z_OK;
+ }
+ 
+@@ -103,7 +103,7 @@
+     strm.opaque = Z_NULL;
+     strm.avail_in = 0;
+     strm.next_in = Z_NULL;
+-    ret = inflateInit(&strm);
++    ret = lz_inflateInit(&strm);
+     if (ret != Z_OK)
+         return ret;
+ 
+@@ -111,7 +111,7 @@
+     do {
+         strm.avail_in = fread(in, 1, CHUNK, source);
+         if (ferror(source)) {
+-            (void)inflateEnd(&strm);
++            (void)lz_inflateEnd(&strm);
+             return Z_ERRNO;
+         }
+         if (strm.avail_in == 0)
+@@ -122,19 +122,19 @@
+         do {
+             strm.avail_out = CHUNK;
+             strm.next_out = out;
+-            ret = inflate(&strm, Z_NO_FLUSH);
++            ret = lz_inflate(&strm, Z_NO_FLUSH);
+             assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
+             switch (ret) {
+             case Z_NEED_DICT:
+                 ret = Z_DATA_ERROR;     /* and fall through */
+             case Z_DATA_ERROR:
+             case Z_MEM_ERROR:
+-                (void)inflateEnd(&strm);
++                (void)lz_inflateEnd(&strm);
+                 return ret;
+             }
+             have = CHUNK - strm.avail_out;
+             if (fwrite(out, 1, have, dest) != have || ferror(dest)) {
+-                (void)inflateEnd(&strm);
++                (void)lz_inflateEnd(&strm);
+                 return Z_ERRNO;
+             }
+         } while (strm.avail_out == 0);
+@@ -143,7 +143,7 @@
+     } while (ret != Z_STREAM_END);
+ 
+     /* clean up and return */
+-    (void)inflateEnd(&strm);
++    (void)lz_inflateEnd(&strm);
+     return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
+ }
+ 
+diff -Naru zlib/gzread.c zlib-new/gzread.c
+--- zlib/gzread.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/gzread.c	2025-05-22 19:41:49.794533700 +0800
+@@ -112,7 +112,7 @@
+         state->strm.opaque = Z_NULL;
+         state->strm.avail_in = 0;
+         state->strm.next_in = Z_NULL;
+-        if (inflateInit2(&(state->strm), 15 + 16) != Z_OK) {    /* gunzip */
++        if (lz_inflateInit2(&(state->strm), 15 + 16) != Z_OK) {    /* gunzip */
+             free(state->out);
+             free(state->in);
+             state->size = 0;
+@@ -138,7 +138,7 @@
+        single byte is sufficient indication that it is not a gzip file) */
+     if (strm->avail_in > 1 &&
+             strm->next_in[0] == 31 && strm->next_in[1] == 139) {
+-        inflateReset(strm);
++        lz_inflateReset(strm);
+         state->how = GZIP;
+         state->direct = 0;
+         return 0;
+@@ -191,7 +191,7 @@
+         }
+ 
+         /* decompress and handle errors */
+-        ret = inflate(strm, Z_NO_FLUSH);
++        ret = lz_inflate(strm, Z_NO_FLUSH);
+         if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT) {
+             gz_error(state, Z_STREAM_ERROR,
+                      "internal error: inflate stream corrupt");
+@@ -641,7 +641,7 @@
+ 
+     /* free memory and close file */
+     if (state->size) {
+-        inflateEnd(&(state->strm));
++        lz_inflateEnd(&(state->strm));
+         free(state->out);
+         free(state->in);
+     }
+diff -Naru zlib/gzwrite.c zlib-new/gzwrite.c
+--- zlib/gzwrite.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/gzwrite.c	2025-05-22 19:41:49.794533700 +0800
+@@ -41,7 +41,7 @@
+         strm->zalloc = Z_NULL;
+         strm->zfree = Z_NULL;
+         strm->opaque = Z_NULL;
+-        ret = deflateInit2(strm, state->level, Z_DEFLATED,
++        ret = lz_deflateInit2(strm, state->level, Z_DEFLATED,
+                            MAX_WBITS + 16, DEF_MEM_LEVEL, state->strategy);
+         if (ret != Z_OK) {
+             free(state->out);
+@@ -123,7 +123,7 @@
+ 
+         /* compress */
+         have = strm->avail_out;
+-        ret = deflate(strm, flush);
++        ret = lz_deflate(strm, flush);
+         if (ret == Z_STREAM_ERROR) {
+             gz_error(state, Z_STREAM_ERROR,
+                       "internal error: deflate stream corrupt");
+@@ -134,7 +134,7 @@
+ 
+     /* if that completed a deflate stream, allow another to start */
+     if (flush == Z_FINISH)
+-        deflateReset(strm);
++        lz_deflateReset(strm);
+ 
+     /* all done, no errors */
+     return 0;
+@@ -651,7 +651,7 @@
+         ret = state->err;
+     if (state->size) {
+         if (!state->direct) {
+-            (void)deflateEnd(&(state->strm));
++            (void)lz_deflateEnd(&(state->strm));
+             free(state->out);
+         }
+         free(state->in);
+diff -Naru zlib/inflate.c zlib-new/inflate.c
+--- zlib/inflate.c	2025-05-22 19:39:49.142533700 +0800
++++ zlib-new/inflate.c	2025-05-22 19:49:08.210533700 +0800
+@@ -141,7 +141,7 @@
+     return Z_OK;
+ }
+ 
+-int ZEXPORT inflateReset(strm)
++int ZEXPORT lz_inflateReset(strm)
+ z_streamp strm;
+ {
+     struct inflate_state FAR *state;
+@@ -189,10 +189,10 @@
+     /* update state and reset the rest of it */
+     state->wrap = wrap;
+     state->wbits = (unsigned)windowBits;
+-    return inflateReset(strm);
++    return lz_inflateReset(strm);
+ }
+ 
+-int ZEXPORT inflateInit2_(strm, windowBits, version, stream_size)
++int ZEXPORT lz_inflateInit2_(strm, windowBits, version, stream_size)
+ z_streamp strm;
+ int windowBits;
+ const char *version;
+@@ -236,12 +236,12 @@
+     return ret;
+ }
+ 
+-int ZEXPORT inflateInit_(strm, version, stream_size)
++int ZEXPORT lz_inflateInit_(strm, version, stream_size)
+ z_streamp strm;
+ const char *version;
+ int stream_size;
+ {
+-    return inflateInit2_(strm, DEF_WBITS, version, stream_size);
++    return lz_inflateInit2_(strm, DEF_WBITS, version, stream_size);
+ }
+ 
+ int ZEXPORT inflatePrime(strm, bits, value)
+@@ -619,7 +619,8 @@
+    will return Z_BUF_ERROR if it has not reached the end of the stream.
+  */
+ 
+-int ZEXPORT inflate(strm, flush)
++
++int ZEXPORT lz_inflate(strm, flush)
+ z_streamp strm;
+ int flush;
+ {
+@@ -1275,7 +1276,7 @@
+     return ret;
+ }
+ 
+-int ZEXPORT inflateEnd(strm)
++int ZEXPORT lz_inflateEnd(strm)
+ z_streamp strm;
+ {
+     struct inflate_state FAR *state;
+@@ -1286,6 +1287,7 @@
+     ZFREE(strm, strm->state);
+     strm->state = Z_NULL;
+     Tracev((stderr, "inflate: end\n"));
++    
+     return Z_OK;
+ }
+ 
+@@ -1398,6 +1400,7 @@
+     return next;
+ }
+ 
++
+ int ZEXPORT inflateSync(strm)
+ z_streamp strm;
+ {
+@@ -1435,7 +1438,7 @@
+     /* return no joy or set up to restart inflate() on a new block */
+     if (state->have != 4) return Z_DATA_ERROR;
+     in = strm->total_in;  out = strm->total_out;
+-    inflateReset(strm);
++    lz_inflateReset(strm);
+     strm->total_in = in;  strm->total_out = out;
+     state->mode = TYPE;
+     return Z_OK;
+diff -Naru zlib/inflate.h zlib-new/inflate.h
+--- zlib/inflate.h	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/inflate.h	2025-05-22 19:41:49.794533700 +0800
+@@ -122,4 +122,6 @@
+     int sane;                   /* if false, allow invalid distance too far */
+     int back;                   /* bits back of last unprocessed length/lit */
+     unsigned was;               /* initial length of match */
++    unsigned long kaezip_ctx;   /* kunpeng kaezip context */
++    unsigned long sche_ctx;     /* KUAF context */
+ };
+diff -Naru zlib/Makefile.in zlib-new/Makefile.in
+--- zlib/Makefile.in	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/Makefile.in	2025-05-22 19:58:03.014533700 +0800
+@@ -26,14 +26,17 @@
+ 
+ SFLAGS=-O
+ LDFLAGS=
+-TEST_LDFLAGS=-L. libz.a
++
++
++TEST_LDFLAGS=-L. libz_sw.a
++
+ LDSHARED=$(CC)
+ CPP=$(CC) -E
+ 
+-STATICLIB=libz.a
+-SHAREDLIB=libz.so
+-SHAREDLIBV=libz.so.1.2.11
+-SHAREDLIBM=libz.so.1
++STATICLIB=libz_sw.a
++SHAREDLIB=libz_sw.so
++SHAREDLIBV=libz_sw.so.1.2.11
++SHAREDLIBM=libz_sw.so.1
+ LIBS=$(STATICLIB) $(SHAREDLIBV)
+ 
+ AR=ar
+@@ -119,15 +122,15 @@
+ infcover.o: $(SRCDIR)test/infcover.c $(SRCDIR)zlib.h zconf.h
+ 	$(CC) $(CFLAGS) $(ZINCOUT) -c -o $@ $(SRCDIR)test/infcover.c
+ 
+-infcover: infcover.o libz.a
+-	$(CC) $(CFLAGS) -o $@ infcover.o libz.a
++infcover: infcover.o libz_sw.a
++	$(CC) $(CFLAGS) -o $@ infcover.o libz_sw.a
+ 
+ cover: infcover
+ 	rm -f *.gcda
+ 	./infcover
+ 	gcov inf*.c
+ 
+-libz.a: $(OBJS)
++libz_sw.a: $(OBJS)
+ 	$(AR) $(ARFLAGS) $@ $(OBJS)
+ 	-@ ($(RANLIB) $@ || true) >/dev/null 2>&1
+ 
+@@ -278,7 +281,7 @@
+ 	-@mv objs/gzwrite.o $@
+ 
+ 
+-placebo $(SHAREDLIBV): $(PIC_OBJS) libz.a
++placebo $(SHAREDLIBV): $(PIC_OBJS) libz_sw.a
+ 	$(LDSHARED) $(SFLAGS) -o $@ $(PIC_OBJS) $(LDSHAREDLIBC) $(LDFLAGS)
+ 	rm -f $(SHAREDLIB) $(SHAREDLIBM)
+ 	ln -s $@ $(SHAREDLIB)
+@@ -307,12 +310,10 @@
+ 	-@if [ ! -d $(DESTDIR)$(exec_prefix)  ]; then mkdir -p $(DESTDIR)$(exec_prefix); fi
+ 	-@if [ ! -d $(DESTDIR)$(libdir)       ]; then mkdir -p $(DESTDIR)$(libdir); fi
+ 	-@if [ ! -d $(DESTDIR)$(sharedlibdir) ]; then mkdir -p $(DESTDIR)$(sharedlibdir); fi
+-	-@if [ ! -d $(DESTDIR)$(man3dir)      ]; then mkdir -p $(DESTDIR)$(man3dir); fi
+-	-@if [ ! -d $(DESTDIR)$(pkgconfigdir) ]; then mkdir -p $(DESTDIR)$(pkgconfigdir); fi
+ 	rm -f $(DESTDIR)$(libdir)/$(STATICLIB)
+ 	cp $(STATICLIB) $(DESTDIR)$(libdir)
+ 	chmod 644 $(DESTDIR)$(libdir)/$(STATICLIB)
+-	-@($(RANLIB) $(DESTDIR)$(libdir)/libz.a || true) >/dev/null 2>&1
++	-@($(RANLIB) $(DESTDIR)$(libdir)/libz_sw.a || true) >/dev/null 2>&1
+ 	-@if test -n "$(SHAREDLIBV)"; then \
+ 	  rm -f $(DESTDIR)$(sharedlibdir)/$(SHAREDLIBV); \
+ 	  cp $(SHAREDLIBV) $(DESTDIR)$(sharedlibdir); \
+@@ -324,29 +325,18 @@
+ 	  ln -s $(SHAREDLIBV) $(DESTDIR)$(sharedlibdir)/$(SHAREDLIBM); \
+ 	  ($(LDCONFIG) || true)  >/dev/null 2>&1; \
+ 	fi
+-	rm -f $(DESTDIR)$(man3dir)/zlib.3
+-	cp $(SRCDIR)zlib.3 $(DESTDIR)$(man3dir)
+-	chmod 644 $(DESTDIR)$(man3dir)/zlib.3
+-	rm -f $(DESTDIR)$(pkgconfigdir)/zlib.pc
+-	cp zlib.pc $(DESTDIR)$(pkgconfigdir)
+-	chmod 644 $(DESTDIR)$(pkgconfigdir)/zlib.pc
+ # The ranlib in install is needed on NeXTSTEP which checks file times
+ # ldconfig is for Linux
+ 
+ install: install-libs
+ 	-@if [ ! -d $(DESTDIR)$(includedir)   ]; then mkdir -p $(DESTDIR)$(includedir); fi
+ 	rm -f $(DESTDIR)$(includedir)/zlib.h $(DESTDIR)$(includedir)/zconf.h
+-	cp $(SRCDIR)zlib.h zconf.h $(DESTDIR)$(includedir)
+-	chmod 644 $(DESTDIR)$(includedir)/zlib.h $(DESTDIR)$(includedir)/zconf.h
+ 
+ uninstall:
+-	cd $(DESTDIR)$(includedir) && rm -f zlib.h zconf.h
+-	cd $(DESTDIR)$(libdir) && rm -f libz.a; \
++	cd $(DESTDIR)$(libdir) && rm -f libz_sw.a; \
+ 	if test -n "$(SHAREDLIBV)" -a -f $(SHAREDLIBV); then \
+ 	  rm -f $(SHAREDLIBV) $(SHAREDLIB) $(SHAREDLIBM); \
+ 	fi
+-	cd $(DESTDIR)$(man3dir) && rm -f zlib.3
+-	cd $(DESTDIR)$(pkgconfigdir) && rm -f zlib.pc
+ 
+ docs: zlib.3.pdf
+ 
+@@ -369,7 +359,7 @@
+ 	   example$(EXE) minigzip$(EXE) examplesh$(EXE) minigzipsh$(EXE) \
+ 	   example64$(EXE) minigzip64$(EXE) \
+ 	   infcover \
+-	   libz.* foo.gz so_locations \
++	   libz_sw.* foo.gz so_locations \
+ 	   _match.s maketree contrib/infback9/*.o
+ 	rm -rf objs
+ 	rm -f *.gcda *.gcno *.gcov
+diff -Naru zlib/test/example.c zlib-new/test/example.c
+--- zlib/test/example.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/test/example.c	2025-05-22 19:41:49.794533700 +0800
+@@ -92,12 +92,12 @@
+     int err;
+     uLong len = (uLong)strlen(hello)+1;
+ 
+-    err = compress(compr, &comprLen, (const Bytef*)hello, len);
++    err = lz_compress(compr, &comprLen, (const Bytef*)hello, len);
+     CHECK_ERR(err, "compress");
+ 
+     strcpy((char*)uncompr, "garbage");
+ 
+-    err = uncompress(uncompr, &uncomprLen, compr, comprLen);
++    err = lz_uncompress(uncompr, &uncomprLen, compr, comprLen);
+     CHECK_ERR(err, "uncompress");
+ 
+     if (strcmp((char*)uncompr, hello)) {
+@@ -209,7 +209,7 @@
+     c_stream.zfree = zfree;
+     c_stream.opaque = (voidpf)0;
+ 
+-    err = deflateInit(&c_stream, Z_DEFAULT_COMPRESSION);
++    err = lz_deflateInit(&c_stream, Z_DEFAULT_COMPRESSION);
+     CHECK_ERR(err, "deflateInit");
+ 
+     c_stream.next_in  = (z_const unsigned char *)hello;
+@@ -217,18 +217,18 @@
+ 
+     while (c_stream.total_in != len && c_stream.total_out < comprLen) {
+         c_stream.avail_in = c_stream.avail_out = 1; /* force small buffers */
+-        err = deflate(&c_stream, Z_NO_FLUSH);
++        err = lz_deflate(&c_stream, Z_NO_FLUSH);
+         CHECK_ERR(err, "deflate");
+     }
+     /* Finish the stream, still forcing small buffers: */
+     for (;;) {
+         c_stream.avail_out = 1;
+-        err = deflate(&c_stream, Z_FINISH);
++        err = lz_deflate(&c_stream, Z_FINISH);
+         if (err == Z_STREAM_END) break;
+         CHECK_ERR(err, "deflate");
+     }
+ 
+-    err = deflateEnd(&c_stream);
++    err = lz_deflateEnd(&c_stream);
+     CHECK_ERR(err, "deflateEnd");
+ }
+ 
+@@ -252,17 +252,17 @@
+     d_stream.avail_in = 0;
+     d_stream.next_out = uncompr;
+ 
+-    err = inflateInit(&d_stream);
++    err = lz_inflateInit(&d_stream);
+     CHECK_ERR(err, "inflateInit");
+ 
+     while (d_stream.total_out < uncomprLen && d_stream.total_in < comprLen) {
+         d_stream.avail_in = d_stream.avail_out = 1; /* force small buffers */
+-        err = inflate(&d_stream, Z_NO_FLUSH);
++        err = lz_inflate(&d_stream, Z_NO_FLUSH);
+         if (err == Z_STREAM_END) break;
+         CHECK_ERR(err, "inflate");
+     }
+ 
+-    err = inflateEnd(&d_stream);
++    err = lz_inflateEnd(&d_stream);
+     CHECK_ERR(err, "inflateEnd");
+ 
+     if (strcmp((char*)uncompr, hello)) {
+@@ -287,7 +287,7 @@
+     c_stream.zfree = zfree;
+     c_stream.opaque = (voidpf)0;
+ 
+-    err = deflateInit(&c_stream, Z_BEST_SPEED);
++    err = lz_deflateInit(&c_stream, Z_BEST_SPEED);
+     CHECK_ERR(err, "deflateInit");
+ 
+     c_stream.next_out = compr;
+@@ -298,7 +298,7 @@
+      */
+     c_stream.next_in = uncompr;
+     c_stream.avail_in = (uInt)uncomprLen;
+-    err = deflate(&c_stream, Z_NO_FLUSH);
++    err = lz_deflate(&c_stream, Z_NO_FLUSH);
+     CHECK_ERR(err, "deflate");
+     if (c_stream.avail_in != 0) {
+         fprintf(stderr, "deflate not greedy\n");
+@@ -309,22 +309,22 @@
+     deflateParams(&c_stream, Z_NO_COMPRESSION, Z_DEFAULT_STRATEGY);
+     c_stream.next_in = compr;
+     c_stream.avail_in = (uInt)comprLen/2;
+-    err = deflate(&c_stream, Z_NO_FLUSH);
++    err = lz_deflate(&c_stream, Z_NO_FLUSH);
+     CHECK_ERR(err, "deflate");
+ 
+     /* Switch back to compressing mode: */
+     deflateParams(&c_stream, Z_BEST_COMPRESSION, Z_FILTERED);
+     c_stream.next_in = uncompr;
+     c_stream.avail_in = (uInt)uncomprLen;
+-    err = deflate(&c_stream, Z_NO_FLUSH);
++    err = lz_deflate(&c_stream, Z_NO_FLUSH);
+     CHECK_ERR(err, "deflate");
+ 
+-    err = deflate(&c_stream, Z_FINISH);
++    err = lz_deflate(&c_stream, Z_FINISH);
+     if (err != Z_STREAM_END) {
+         fprintf(stderr, "deflate should report Z_STREAM_END\n");
+         exit(1);
+     }
+-    err = deflateEnd(&c_stream);
++    err = lz_deflateEnd(&c_stream);
+     CHECK_ERR(err, "deflateEnd");
+ }
+ 
+@@ -347,18 +347,18 @@
+     d_stream.next_in  = compr;
+     d_stream.avail_in = (uInt)comprLen;
+ 
+-    err = inflateInit(&d_stream);
++    err = lz_inflateInit(&d_stream);
+     CHECK_ERR(err, "inflateInit");
+ 
+     for (;;) {
+         d_stream.next_out = uncompr;            /* discard the output */
+         d_stream.avail_out = (uInt)uncomprLen;
+-        err = inflate(&d_stream, Z_NO_FLUSH);
++        err = lz_inflate(&d_stream, Z_NO_FLUSH);
+         if (err == Z_STREAM_END) break;
+         CHECK_ERR(err, "large inflate");
+     }
+ 
+-    err = inflateEnd(&d_stream);
++    err = lz_inflateEnd(&d_stream);
+     CHECK_ERR(err, "inflateEnd");
+ 
+     if (d_stream.total_out != 2*uncomprLen + comprLen/2) {
+@@ -384,24 +384,24 @@
+     c_stream.zfree = zfree;
+     c_stream.opaque = (voidpf)0;
+ 
+-    err = deflateInit(&c_stream, Z_DEFAULT_COMPRESSION);
++    err = lz_deflateInit(&c_stream, Z_DEFAULT_COMPRESSION);
+     CHECK_ERR(err, "deflateInit");
+ 
+     c_stream.next_in  = (z_const unsigned char *)hello;
+     c_stream.next_out = compr;
+     c_stream.avail_in = 3;
+     c_stream.avail_out = (uInt)*comprLen;
+-    err = deflate(&c_stream, Z_FULL_FLUSH);
++    err = lz_deflate(&c_stream, Z_FULL_FLUSH);
+     CHECK_ERR(err, "deflate");
+ 
+     compr[3]++; /* force an error in first compressed block */
+     c_stream.avail_in = len - 3;
+ 
+-    err = deflate(&c_stream, Z_FINISH);
++    err = lz_deflate(&c_stream, Z_FINISH);
+     if (err != Z_STREAM_END) {
+         CHECK_ERR(err, "deflate");
+     }
+-    err = deflateEnd(&c_stream);
++    err = lz_deflateEnd(&c_stream);
+     CHECK_ERR(err, "deflateEnd");
+ 
+     *comprLen = c_stream.total_out;
+@@ -426,26 +426,26 @@
+     d_stream.next_in  = compr;
+     d_stream.avail_in = 2; /* just read the zlib header */
+ 
+-    err = inflateInit(&d_stream);
++    err = lz_inflateInit(&d_stream);
+     CHECK_ERR(err, "inflateInit");
+ 
+     d_stream.next_out = uncompr;
+     d_stream.avail_out = (uInt)uncomprLen;
+ 
+-    err = inflate(&d_stream, Z_NO_FLUSH);
++    err = lz_inflate(&d_stream, Z_NO_FLUSH);
+     CHECK_ERR(err, "inflate");
+ 
+     d_stream.avail_in = (uInt)comprLen-2;   /* read all compressed data */
+     err = inflateSync(&d_stream);           /* but skip the damaged part */
+     CHECK_ERR(err, "inflateSync");
+ 
+-    err = inflate(&d_stream, Z_FINISH);
++    err = lz_inflate(&d_stream, Z_FINISH);
+     if (err != Z_DATA_ERROR) {
+         fprintf(stderr, "inflate should report DATA_ERROR\n");
+         /* Because of incorrect adler32 */
+         exit(1);
+     }
+-    err = inflateEnd(&d_stream);
++    err = lz_inflateEnd(&d_stream);
+     CHECK_ERR(err, "inflateEnd");
+ 
+     printf("after inflateSync(): hel%s\n", (char *)uncompr);
+@@ -465,7 +465,7 @@
+     c_stream.zfree = zfree;
+     c_stream.opaque = (voidpf)0;
+ 
+-    err = deflateInit(&c_stream, Z_BEST_COMPRESSION);
++    err = lz_deflateInit(&c_stream, Z_BEST_COMPRESSION);
+     CHECK_ERR(err, "deflateInit");
+ 
+     err = deflateSetDictionary(&c_stream,
+@@ -479,12 +479,12 @@
+     c_stream.next_in = (z_const unsigned char *)hello;
+     c_stream.avail_in = (uInt)strlen(hello)+1;
+ 
+-    err = deflate(&c_stream, Z_FINISH);
++    err = lz_deflate(&c_stream, Z_FINISH);
+     if (err != Z_STREAM_END) {
+         fprintf(stderr, "deflate should report Z_STREAM_END\n");
+         exit(1);
+     }
+-    err = deflateEnd(&c_stream);
++    err = lz_deflateEnd(&c_stream);
+     CHECK_ERR(err, "deflateEnd");
+ }
+ 
+@@ -507,14 +507,14 @@
+     d_stream.next_in  = compr;
+     d_stream.avail_in = (uInt)comprLen;
+ 
+-    err = inflateInit(&d_stream);
++    err = lz_inflateInit(&d_stream);
+     CHECK_ERR(err, "inflateInit");
+ 
+     d_stream.next_out = uncompr;
+     d_stream.avail_out = (uInt)uncomprLen;
+ 
+     for (;;) {
+-        err = inflate(&d_stream, Z_NO_FLUSH);
++        err = lz_inflate(&d_stream, Z_NO_FLUSH);
+         if (err == Z_STREAM_END) break;
+         if (err == Z_NEED_DICT) {
+             if (d_stream.adler != dictId) {
+@@ -527,7 +527,7 @@
+         CHECK_ERR(err, "inflate with dict");
+     }
+ 
+-    err = inflateEnd(&d_stream);
++    err = lz_inflateEnd(&d_stream);
+     CHECK_ERR(err, "inflateEnd");
+ 
+     if (strcmp((char*)uncompr, hello)) {
+diff -Naru zlib/test/infcover.c zlib-new/test/infcover.c
+--- zlib/test/infcover.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/test/infcover.c	2025-05-22 19:41:49.794533700 +0800
+@@ -373,14 +373,14 @@
+     mem_setup(&strm);
+     strm.avail_in = 0;
+     strm.next_in = Z_NULL;
+-    ret = inflateInit_(&strm, ZLIB_VERSION - 1, (int)sizeof(z_stream));
++    ret = lz_inflateInit_(&strm, ZLIB_VERSION - 1, (int)sizeof(z_stream));
+                                                 assert(ret == Z_VERSION_ERROR);
+     mem_done(&strm, "wrong version");
+ 
+     strm.avail_in = 0;
+     strm.next_in = Z_NULL;
+-    ret = inflateInit(&strm);                   assert(ret == Z_OK);
+-    ret = inflateEnd(&strm);                    assert(ret == Z_OK);
++    ret = lz_inflateInit(&strm);                   assert(ret == Z_OK);
++    ret = lz_inflateEnd(&strm);                    assert(ret == Z_OK);
+     fputs("inflate built-in memory routines\n", stderr);
+ }
+ 
+@@ -391,8 +391,8 @@
+     z_stream strm, copy;
+     unsigned char dict[257];
+ 
+-    ret = inflate(Z_NULL, 0);                   assert(ret == Z_STREAM_ERROR);
+-    ret = inflateEnd(Z_NULL);                   assert(ret == Z_STREAM_ERROR);
++    ret = lz_inflate(Z_NULL, 0);                   assert(ret == Z_STREAM_ERROR);
++    ret = lz_inflateEnd(Z_NULL);                   assert(ret == Z_STREAM_ERROR);
+     ret = inflateCopy(Z_NULL, Z_NULL);          assert(ret == Z_STREAM_ERROR);
+     fputs("inflate bad parameters\n", stderr);
+ 
+@@ -413,14 +413,14 @@
+     mem_setup(&strm);
+     strm.avail_in = 0;
+     strm.next_in = Z_NULL;
+-    ret = inflateInit2(&strm, -8);
++    ret = lz_inflateInit2(&strm, -8);
+     strm.avail_in = 2;
+     strm.next_in = (void *)"\x63";
+     strm.avail_out = 1;
+     strm.next_out = (void *)&ret;
+     mem_limit(&strm, 1);
+-    ret = inflate(&strm, Z_NO_FLUSH);           assert(ret == Z_MEM_ERROR);
+-    ret = inflate(&strm, Z_NO_FLUSH);           assert(ret == Z_MEM_ERROR);
++    ret = lz_inflate(&strm, Z_NO_FLUSH);           assert(ret == Z_MEM_ERROR);
++    ret = lz_inflate(&strm, Z_NO_FLUSH);           assert(ret == Z_MEM_ERROR);
+     mem_limit(&strm, 0);
+     memset(dict, 0, 257);
+     ret = inflateSetDictionary(&strm, dict, 257);
+@@ -430,7 +430,7 @@
+     strm.avail_in = 2;
+     strm.next_in = (void *)"\x80";
+     ret = inflateSync(&strm);                   assert(ret == Z_DATA_ERROR);
+-    ret = inflate(&strm, Z_NO_FLUSH);           assert(ret == Z_STREAM_ERROR);
++    ret = lz_inflate(&strm, Z_NO_FLUSH);           assert(ret == Z_STREAM_ERROR);
+     strm.avail_in = 4;
+     strm.next_in = (void *)"\0\0\xff\xff";
+     ret = inflateSync(&strm);                   assert(ret == Z_OK);
+@@ -531,14 +531,14 @@
+     mem_setup(&strm);
+     strm.avail_in = 0;
+     strm.next_in = Z_NULL;
+-    ret = inflateInit2(&strm, err < 0 ? 47 : -15);
++    ret = lz_inflateInit2(&strm, err < 0 ? 47 : -15);
+     assert(ret == Z_OK);
+     strm.avail_in = len;
+     strm.next_in = in;
+     do {
+         strm.avail_out = size;
+         strm.next_out = out;
+-        ret = inflate(&strm, Z_TREES);
++        ret = lz_inflate(&strm, Z_TREES);
+         assert(ret != Z_STREAM_ERROR && ret != Z_MEM_ERROR);
+         if (ret == Z_DATA_ERROR || ret == Z_NEED_DICT)
+             break;
+diff -Naru zlib/test/minigzip.c zlib-new/test/minigzip.c
+--- zlib/test/minigzip.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/test/minigzip.c	2025-05-22 19:41:49.794533700 +0800
+@@ -209,11 +209,11 @@
+     gz->strm.zfree = myfree;
+     gz->strm.opaque = Z_NULL;
+     if (gz->write)
+-        ret = deflateInit2(&(gz->strm), -1, 8, 15 + 16, 8, 0);
++        ret = lz_deflateInit2(&(gz->strm), -1, 8, 15 + 16, 8, 0);
+     else {
+         gz->strm.next_in = 0;
+         gz->strm.avail_in = Z_NULL;
+-        ret = inflateInit2(&(gz->strm), 15 + 16);
++        ret = lz_inflateInit2(&(gz->strm), 15 + 16);
+     }
+     if (ret != Z_OK) {
+         free(gz);
+@@ -222,7 +222,7 @@
+     gz->file = path == NULL ? fdopen(fd, gz->write ? "wb" : "rb") :
+                               fopen(path, gz->write ? "wb" : "rb");
+     if (gz->file == NULL) {
+-        gz->write ? deflateEnd(&(gz->strm)) : inflateEnd(&(gz->strm));
++        gz->write ? lz_deflateEnd(&(gz->strm)) : lz_inflateEnd(&(gz->strm));
+         free(gz);
+         return NULL;
+     }
+@@ -249,7 +249,7 @@
+     do {
+         strm->next_out = out;
+         strm->avail_out = BUFLEN;
+-        (void)deflate(strm, Z_NO_FLUSH);
++        (void)lz_deflate(strm, Z_NO_FLUSH);
+         fwrite(out, 1, BUFLEN - strm->avail_out, gz->file);
+     } while (strm->avail_out == 0);
+     return len;
+@@ -280,14 +280,14 @@
+             break;
+         strm->next_in = in;
+         strm->avail_in = 1;
+-        ret = inflate(strm, Z_NO_FLUSH);
++        ret = lz_inflate(strm, Z_NO_FLUSH);
+         if (ret == Z_DATA_ERROR) {
+             gz->err = Z_DATA_ERROR;
+             gz->msg = strm->msg;
+             return 0;
+         }
+         if (ret == Z_STREAM_END)
+-            inflateReset(strm);
++            lz_inflateReset(strm);
+     } while (strm->avail_out);
+     return len - strm->avail_out;
+ }
+@@ -309,13 +309,13 @@
+         do {
+             strm->next_out = out;
+             strm->avail_out = BUFLEN;
+-            (void)deflate(strm, Z_FINISH);
++            (void)lz_deflate(strm, Z_FINISH);
+             fwrite(out, 1, BUFLEN - strm->avail_out, gz->file);
+         } while (strm->avail_out == 0);
+-        deflateEnd(strm);
++        lz_deflateEnd(strm);
+     }
+     else
+-        inflateEnd(strm);
++        lz_inflateEnd(strm);
+     fclose(gz->file);
+     free(gz);
+     return Z_OK;
+diff -Naru zlib/uncompr.c zlib-new/uncompr.c
+--- zlib/uncompr.c	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/uncompr.c	2025-05-22 19:41:49.794533700 +0800
+@@ -24,7 +24,7 @@
+    Z_DATA_ERROR if the input data was corrupted, including if the input data is
+    an incomplete zlib stream.
+ */
+-int ZEXPORT uncompress2 (dest, destLen, source, sourceLen)
++int ZEXPORT lz_uncompress2 (dest, destLen, source, sourceLen)
+     Bytef *dest;
+     uLongf *destLen;
+     const Bytef *source;
+@@ -32,7 +32,7 @@
+ {
+     z_stream stream;
+     int err;
+-    const uInt max = (uInt)-1;
++    const uInt max = ((uInt)-1) - 3; // make sure its multiples of 4B
+     uLong len, left;
+     Byte buf[1];    /* for detection of incomplete stream when *destLen == 0 */
+ 
+@@ -52,7 +52,7 @@
+     stream.zfree = (free_func)0;
+     stream.opaque = (voidpf)0;
+ 
+-    err = inflateInit(&stream);
++    err = lz_inflateInit(&stream);
+     if (err != Z_OK) return err;
+ 
+     stream.next_out = dest;
+@@ -67,7 +67,7 @@
+             stream.avail_in = len > (uLong)max ? max : (uInt)len;
+             len -= stream.avail_in;
+         }
+-        err = inflate(&stream, Z_NO_FLUSH);
++        err = lz_inflate(&stream, Z_NO_FLUSH);
+     } while (err == Z_OK);
+ 
+     *sourceLen -= len + stream.avail_in;
+@@ -76,18 +76,18 @@
+     else if (stream.total_out && err == Z_BUF_ERROR)
+         left = 1;
+ 
+-    inflateEnd(&stream);
++    lz_inflateEnd(&stream);
+     return err == Z_STREAM_END ? Z_OK :
+            err == Z_NEED_DICT ? Z_DATA_ERROR  :
+            err == Z_BUF_ERROR && left + stream.avail_out ? Z_DATA_ERROR :
+            err;
+ }
+ 
+-int ZEXPORT uncompress (dest, destLen, source, sourceLen)
++int ZEXPORT lz_uncompress (dest, destLen, source, sourceLen)
+     Bytef *dest;
+     uLongf *destLen;
+     const Bytef *source;
+     uLong sourceLen;
+ {
+-    return uncompress2(dest, destLen, source, &sourceLen);
++    return lz_uncompress2(dest, destLen, source, &sourceLen);
+ }
+diff -Naru zlib/zlib.h zlib-new/zlib.h
+--- zlib/zlib.h	2017-01-16 01:29:40.000000000 +0800
++++ zlib-new/zlib.h	2025-05-22 19:41:49.794533700 +0800
+@@ -247,7 +247,7 @@
+ */
+ 
+ 
+-ZEXTERN int ZEXPORT deflate OF((z_streamp strm, int flush));
++ZEXTERN int ZEXPORT lz_deflate OF((z_streamp strm, int flush));
+ /*
+     deflate compresses as much data as possible, and stops when the input
+   buffer becomes empty or the output buffer becomes full.  It may introduce
+@@ -360,7 +360,7 @@
+ */
+ 
+ 
+-ZEXTERN int ZEXPORT deflateEnd OF((z_streamp strm));
++ZEXTERN int ZEXPORT lz_deflateEnd OF((z_streamp strm));
+ /*
+      All dynamically allocated data structures for this stream are freed.
+    This function discards any unprocessed input and does not flush any pending
+@@ -397,7 +397,7 @@
+ */
+ 
+ 
+-ZEXTERN int ZEXPORT inflate OF((z_streamp strm, int flush));
++ZEXTERN int ZEXPORT lz_inflate OF((z_streamp strm, int flush));
+ /*
+     inflate decompresses as much data as possible, and stops when the input
+   buffer becomes empty or the output buffer becomes full.  It may introduce
+@@ -517,7 +517,7 @@
+ */
+ 
+ 
+-ZEXTERN int ZEXPORT inflateEnd OF((z_streamp strm));
++ZEXTERN int ZEXPORT lz_inflateEnd OF((z_streamp strm));
+ /*
+      All dynamically allocated data structures for this stream are freed.
+    This function discards any unprocessed input and does not flush any pending
+@@ -692,7 +692,7 @@
+    destination.
+ */
+ 
+-ZEXTERN int ZEXPORT deflateReset OF((z_streamp strm));
++ZEXTERN int ZEXPORT lz_deflateReset OF((z_streamp strm));
+ /*
+      This function is equivalent to deflateEnd followed by deflateInit, but
+    does not free and reallocate the internal compression state.  The stream
+@@ -954,7 +954,7 @@
+    destination.
+ */
+ 
+-ZEXTERN int ZEXPORT inflateReset OF((z_streamp strm));
++ZEXTERN int ZEXPORT lz_inflateReset OF((z_streamp strm));
+ /*
+      This function is equivalent to inflateEnd followed by inflateInit,
+    but does not free and reallocate the internal decompression state.  The
+@@ -1224,7 +1224,7 @@
+    you need special options.
+ */
+ 
+-ZEXTERN int ZEXPORT compress OF((Bytef *dest,   uLongf *destLen,
++ZEXTERN int ZEXPORT lz_compress OF((Bytef *dest,   uLongf *destLen,
+                                  const Bytef *source, uLong sourceLen));
+ /*
+      Compresses the source buffer into the destination buffer.  sourceLen is
+@@ -1239,7 +1239,7 @@
+    buffer.
+ */
+ 
+-ZEXTERN int ZEXPORT compress2 OF((Bytef *dest,   uLongf *destLen,
++ZEXTERN int ZEXPORT lz_compress2 OF((Bytef *dest,   uLongf *destLen,
+                                   const Bytef *source, uLong sourceLen,
+                                   int level));
+ /*
+@@ -1255,14 +1255,14 @@
+    Z_STREAM_ERROR if the level parameter is invalid.
+ */
+ 
+-ZEXTERN uLong ZEXPORT compressBound OF((uLong sourceLen));
++ZEXTERN uLong ZEXPORT lz_compressBound OF((uLong sourceLen));
+ /*
+      compressBound() returns an upper bound on the compressed size after
+    compress() or compress2() on sourceLen bytes.  It would be used before a
+    compress() or compress2() call to allocate the destination buffer.
+ */
+ 
+-ZEXTERN int ZEXPORT uncompress OF((Bytef *dest,   uLongf *destLen,
++ZEXTERN int ZEXPORT lz_uncompress OF((Bytef *dest,   uLongf *destLen,
+                                    const Bytef *source, uLong sourceLen));
+ /*
+      Decompresses the source buffer into the destination buffer.  sourceLen is
+@@ -1280,7 +1280,7 @@
+    buffer with the uncompressed data up to that point.
+ */
+ 
+-ZEXTERN int ZEXPORT uncompress2 OF((Bytef *dest,   uLongf *destLen,
++ZEXTERN int ZEXPORT lz_uncompress2 OF((Bytef *dest,   uLongf *destLen,
+                                     const Bytef *source, uLong *sourceLen));
+ /*
+      Same as uncompress, except that sourceLen is a pointer, where the
+@@ -1761,15 +1761,15 @@
+ /* deflateInit and inflateInit are macros to allow checking the zlib version
+  * and the compiler's view of z_stream:
+  */
+-ZEXTERN int ZEXPORT deflateInit_ OF((z_streamp strm, int level,
++ZEXTERN int ZEXPORT lz_deflateInit_ OF((z_streamp strm, int level,
+                                      const char *version, int stream_size));
+-ZEXTERN int ZEXPORT inflateInit_ OF((z_streamp strm,
++ZEXTERN int ZEXPORT lz_inflateInit_ OF((z_streamp strm,
+                                      const char *version, int stream_size));
+-ZEXTERN int ZEXPORT deflateInit2_ OF((z_streamp strm, int  level, int  method,
++ZEXTERN int ZEXPORT lz_deflateInit2_ OF((z_streamp strm, int  level, int  method,
+                                       int windowBits, int memLevel,
+                                       int strategy, const char *version,
+                                       int stream_size));
+-ZEXTERN int ZEXPORT inflateInit2_ OF((z_streamp strm, int  windowBits,
++ZEXTERN int ZEXPORT lz_inflateInit2_ OF((z_streamp strm, int  windowBits,
+                                       const char *version, int stream_size));
+ ZEXTERN int ZEXPORT inflateBackInit_ OF((z_streamp strm, int windowBits,
+                                          unsigned char FAR *window,
+@@ -1790,15 +1790,15 @@
+           inflateBackInit_((strm), (windowBits), (window), \
+                            ZLIB_VERSION, (int)sizeof(z_stream))
+ #else
+-#  define deflateInit(strm, level) \
+-          deflateInit_((strm), (level), ZLIB_VERSION, (int)sizeof(z_stream))
+-#  define inflateInit(strm) \
+-          inflateInit_((strm), ZLIB_VERSION, (int)sizeof(z_stream))
+-#  define deflateInit2(strm, level, method, windowBits, memLevel, strategy) \
+-          deflateInit2_((strm),(level),(method),(windowBits),(memLevel),\
++#  define lz_deflateInit(strm, level) \
++          lz_deflateInit_((strm), (level), ZLIB_VERSION, (int)sizeof(z_stream))
++#  define lz_inflateInit(strm) \
++          lz_inflateInit_((strm), ZLIB_VERSION, (int)sizeof(z_stream))
++#  define lz_deflateInit2(strm, level, method, windowBits, memLevel, strategy) \
++          lz_deflateInit2_((strm),(level),(method),(windowBits),(memLevel),\
+                         (strategy), ZLIB_VERSION, (int)sizeof(z_stream))
+-#  define inflateInit2(strm, windowBits) \
+-          inflateInit2_((strm), (windowBits), ZLIB_VERSION, \
++#  define lz_inflateInit2(strm, windowBits) \
++          lz_inflateInit2_((strm), (windowBits), ZLIB_VERSION, \
+                         (int)sizeof(z_stream))
+ #  define inflateBackInit(strm, windowBits, window) \
+           inflateBackInit_((strm), (windowBits), (window), \
