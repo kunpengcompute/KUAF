@@ -1,0 +1,4 @@
+[KUAF_Section]
+log_level=none
+expired_interval=500
+update_interval=50
