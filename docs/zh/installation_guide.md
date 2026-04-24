@@ -8,29 +8,26 @@
 |--|--|--|
 |openEuler 22.03 LTS SP3|鲲鹏920系列处理器|GCC 10.3.1|
 
-
->**须知：** 
+>**须知：**
 >KUAF目前只支持鲲鹏920系列处理器调度。
 
-
-
-
-## 源码安装和卸载
+## 安装KUAF
 
 请先安装KAE，随后按照本章节步骤安装KUAF。安装完成后，需运行指定脚本编译构建zlib库（该过程会从GitHub仓库下载源码，请确保网络可正常访问GitHub）。
 
 **安装步骤<a name="section68113416198"></a>**
 
-1. 请参见《[鲲鹏加速引擎 用户指南](https://www.hikunpeng.com/document/detail/zh/kunpengaccel/kae/usermanual/kunpengaccel_16_0002.html)》对KAE进行安装。
+1. 请参见《[KAE 安装指南](https://gitcode.com/boostkit/KAE/blob/kae2/docs/zh/installation_guide.md)》对KAE进行安装。
+
 2. 通过以下命令下载KUAF源码将KUAF源码包拷贝到自定义路径下并解压。
 
-    ```
+    ```bash
     git clone https://gitcode.com/boostkit/KUAF.git
     ```
 
 3. 一键安装所有模块。
 
-    ```
+    ```bash
     cd KUAF
     sh build.sh all
     ```
@@ -39,7 +36,7 @@
 
     新建openssl.cnf需要添加如下配置信息：
 
-    ```
+    ```bash
     openssl_conf=openssl_def 
     [openssl_def]
     engines=engine_section 
@@ -54,7 +51,7 @@
 
     设置OPENSSL\_CONF环境变量：
 
-    ```
+    ```bash
     export OPENSSL_CONF=/home/app/openssl.cnf  #该路径为openssl.cnf存放路径
     ```
 
@@ -62,19 +59,19 @@
 
 1. 设置环境变量。
 
-    ```
+    ```bash
     export LD_LIBRARY_PATH=/usr/local/kuaf/lib:/usr/local/lib:/usr/local/lib/engines-1.1$LD_LIBRARY_PATH
     ```
 
 2. 查看“/usr/local/kuaf/lib“目录下so情况。
 
-    ```
+    ```bash
     ll /usr/local/kuaf/lib
     ```
 
     回显信息中有libkuaf.so、libz\_sw.so、libkaezip.so、libkae.so存在说明安装成功。
 
-    ```
+    ```text
     total 1664
     -rwxr-xr-x. 1 root root   1250 Nov  6 19:24 libkae.la
     -rwxr-xr-x. 1 root root 364432 Nov  6 19:24 libkae.so
@@ -97,19 +94,19 @@
 
     安装路径（默认路径是“/usr/local/kuaf“）下生成相应文件，其中，“include“文件夹包含KUAF库的头文件，“lib“文件夹包含了KUAF的动态库文件。
 
-**卸载KUAF<a name="section245327516"></a>**
+## 卸载KUAF
 
 若不再需要使用KUAF，可卸载KUAF。卸载KUAF将会影响您正在执行的业务流，建议先停止正在执行的业务流再进行卸载操作。
 
 1. 执行脚本卸载KUAF。
 
-    ```
+    ```bash
     sh build.sh cleanup
     ```
 
 2. 查看“/usr/local/kuaf“目录，确认安装目录“/usr/local/kuaf“已被删除。
 
-    ```
+    ```bash
     ll /usr/local/kuaf
     ```
 
@@ -117,8 +114,6 @@
 
 3. 删除OPENSSL\_CONF环境变量。
 
-    ```
+    ```bash
     unset OPENSSL_CONF
     ```
-
-
