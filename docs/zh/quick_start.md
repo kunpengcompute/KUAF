@@ -47,7 +47,7 @@ ratio=60%
 | --- | --- |
 | ZLIB-DEFLATE | zlib压缩的调度配置项。 |
 | ZLIB-INFLATE | zlib解压的调度配置项。 |
-| scheduler | 调度策略，可配置为bandwidth和ratio。</br>bandwidth：策略的数值表示给硬算分配的带宽，达到带宽后切软算。</br>ratio：策略的数值表示走硬算的比例。 |
+| scheduler | 调度策略，可配置为bandwidth和ratio。<br>bandwidth：策略的数值表示给硬算分配的带宽，达到带宽后切软算。<br>ratio：策略的数值表示走硬算的比例。 |
 
 ## 测试步骤
 
