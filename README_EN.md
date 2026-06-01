@@ -2,8 +2,8 @@
 
 ## Latest Updates
 
-- \[2025-12-30\]: This is the second official release. Supports RSA and SM2 algorithms.
-- \[2025-06-30\]: This is the first official release.
+- \[2025.12.30\]: This is the second official release. Supports RSA and SM2 algorithms.
+- \[2025.06.30\]: This is the first official release.
 
 ## Project Introduction
 
