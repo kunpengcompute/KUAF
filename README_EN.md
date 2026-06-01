@@ -57,7 +57,7 @@ The full project directory structure is as follows:
 │   ├── perftest                                             # Performance test
 │   ├── gtest-download                                       # Script for downloading the test framework
 ├── LICENSE                                                  # Project license
-└── README.md                                                # Project description document
+└── README_EN.md                                             # Project description document
 └── build.sh                                                 # Build script
 └── env.check.sh                                             # Environment check script
 ```
