@@ -45,7 +45,6 @@ AS_IF([test "x$openssl_dir" != "x"], [
         AC_MSG_CHECKING([OpenSSL version at $openssl_include])
         AS_IF([grep -q "define OPENSSL_VERSION_NUMBER  0x1010" "$openssl_include/openssl/opensslv.h"], [
             AC_MSG_RESULT([OpenSSL 1.1.1])
-            AC_SUBST([CFLAGS], ["-Wl,-z,relro,-z,now -fstack-protector-strong"])
         ], [
             AC_MSG_RESULT([OpenSSL 3.0+])
             AC_SUBST([cflags_openssl_3], ["-DKAE_OPENSSL_3 -DOPENSSL_SUPPRESS_DEPRECATED"])

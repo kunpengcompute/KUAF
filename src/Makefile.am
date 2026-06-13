@@ -1,18 +1,17 @@
 VERSION = 1:0:0
 ACLOCAL_AMFLAGS = -I m4
 AUTOMAKE_OPTIONS = subdir-objects
-CFLAGS =-g 
+CFLAGS =-g
 CFLAGS +=-I/usr/local/include/uadk/v1 -I/usr/local/kaezip/include
 CFLAGS +=-I$(top_srcdir)/huawei_secure_c/include
-CFLAGS +=-ftrapv -fPIC -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 -O2
+CFLAGS +=-ftrapv -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 -fvisibility=hidden -O2
 
-CFLAGS +=-L$(top_srcdir)/huawei_secure_c/lib
-CFLAGS +=-L/usr/local/kaezip/lib -L/usr/local/kuaf/lib
-
-CFLAGS +=-Wl,-z,now -Wl,-z,relro -Wl,--disable-new-dtags
+AM_LDFLAGS = -L$(top_srcdir)/huawei_secure_c/lib
+AM_LDFLAGS += -L/usr/local/kaezip/lib -L/usr/local/kuaf/lib
+AM_LDFLAGS += -Wl,-z,now -Wl,-z,relro -Wl,-z,noexecstack -Wl,--disable-new-dtags -s
 
 libkuaf_la_LIBADD = -lpthread -lnuma -lwd -lwd_comp -lkaezip -lz_sw -lsecurec
-libkuaf_la_LDFLAGS = -module -version-number $(VERSION)
+libkuaf_la_LDFLAGS = -module -version-number $(VERSION) $(AM_LDFLAGS)
 lib_LTLIBRARIES=libkuaf.la
 
 if COVER
