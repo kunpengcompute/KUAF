@@ -330,16 +330,6 @@ static int bind_fn_kae_alg(ENGINE *e)
         bind_soft_alg(e, KAE_RSA_TYPE, dev_num);
     }
 
-    if (dev_num > 0) {
-        digest_module_init();
-        if (!ENGINE_set_digests(e, sec_engine_digests)) {
-            fprintf(stderr, "uadk bind digest failed\n");
-        } else {
-            uadk_digest_nosva = 1;
-        }
-    } else {
-        bind_soft_alg(e, KAE_DIGEST_TYPE, dev_num);
-    }
     return KUAF_SUCCESS;
 }
 
@@ -367,31 +357,6 @@ static void bind_fn_uadk_alg(ENGINE *e)
 {
     struct uacce_dev *dev;
 
-    dev = wd_get_accel_dev("cipher");
-    if (dev) {
-        if (!uadk_e_bind_ciphers(e)) {
-            fprintf(stderr, "uadk bind cipher failed\n");
-        } else {
-            uadk_cipher = 1;
-        }
-        free(dev);
-    } else {
-        KUAF_DEBUG("cipher use wd_get_accel_dev faild ,no availiable dev_num");
-    }
-
-    dev = wd_get_accel_dev("digest");
-    if (dev) {
-        if (!uadk_e_bind_digest(e)) {
-            fprintf(stderr, "uadk bind digest failed\n");
-        } else {
-            uadk_digest = 1;
-            KUAF_DEBUG("uadk_e_bind_digest successed (bind v2 digest)");
-        }
-        free(dev);
-    } else {
-        KUAF_DEBUG("digest use wd_get_accel_dev faild ,no availiable dev_num");
-    }
-
     dev = wd_get_accel_dev("rsa");
     if (dev) {
         if (!uadk_e_bind_rsa(e)) {
@@ -403,33 +368,6 @@ static void bind_fn_uadk_alg(ENGINE *e)
         free(dev);
     } else {
         KUAF_DEBUG("rsa use wd_get_accel_dev faild ,no availiable dev_num");
-    }
-
-    dev = wd_get_accel_dev("dh");
-    if (dev) {
-        if (!uadk_e_bind_dh(e)) {
-            fprintf(stderr, "uadk bind dh failed\n");
-        } else {
-            uadk_dh = 1;
-            KUAF_DEBUG("uadk_e_bind_dh successed (bind v2 dh)");
-        }
-        free(dev);
-    } else {
-        KUAF_DEBUG("dh use wd_get_accel_dev faild ,no availiable dev_num");
-    }
-
-    /* find an ecc device, no difference for sm2/ecdsa/ecdh/x25519/x448 */
-    dev = wd_get_accel_dev("ecdsa");
-    if (dev) {
-        if (!uadk_e_bind_ecc(e)) {
-            fprintf(stderr, "uadk bind ecc failed\n");
-        } else {
-            uadk_ecc = 1;
-            KUAF_DEBUG("uadk_e_bind_ecc successed (bind v2 ecc)");
-        }
-        free(dev);
-    } else {
-        KUAF_DEBUG("ecdsa use wd_get_accel_dev faild ,no availiable dev_num");
     }
 }
 

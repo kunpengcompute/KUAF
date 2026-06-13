@@ -18,6 +18,8 @@
 #include <openssl/ossl_typ.h>
 #include <openssl/err.h>
 #include <openssl/ec.h>
+#include <stdint.h>
+#include <limits.h>
 
 #include "../include/uadk_engine.h"
 #include "kuaf_sc.h"
@@ -1027,11 +1029,17 @@ static int hpre_sm2_decrypt_init(EVP_PKEY_CTX *ctx)
     return OPENSSL_SUCCESS;
 }
 
-static int sm2_cipher_ber_to_bin(unsigned char *ber, size_t ber_len, struct wcrypto_ecc_point *c1, struct wd_dtb *c2,
-                                 struct wd_dtb *c3)
+static int sm2_cipher_ber_to_bin(const EVP_MD *md, unsigned char *ber, size_t ber_len,
+                                 struct wcrypto_ecc_point *c1, struct wd_dtb *c2, struct wd_dtb *c3)
 {
     struct hpre_sm2_ciphertext *ctext_struct;
-    int ret, len, len1;
+    size_t len, len1, c2_len, c3_len, total_len;
+    int bn_len, bn_len1;
+    int md_size;
+    int ret;
+
+    if (!md || !c1 || !c2 || !c3)
+        return OPENSSL_FAIL;
 
     ctext_struct = d2i_HPRE_SM2_Ciphertext(NULL, (const unsigned char **)&ber, ber_len);
     if (!ctext_struct) {
@@ -1039,19 +1047,53 @@ static int sm2_cipher_ber_to_bin(unsigned char *ber, size_t ber_len, struct wcry
         return OPENSSL_FAIL;
     }
 
-    len = BN_num_bytes(ctext_struct->C1x);
-    len1 = BN_num_bytes(ctext_struct->C1y);
-    c1->x.data = malloc(len + len1 + ctext_struct->C2->length + ctext_struct->C3->length);
+    if (!ctext_struct->C1x || !ctext_struct->C1y || !ctext_struct->C2 || !ctext_struct->C3 ||
+        ctext_struct->C2->length < 0 || ctext_struct->C3->length < 0) {
+        goto free_ctext;
+    }
+
+    md_size = EVP_MD_size(md);
+    if (md_size <= 0 || ctext_struct->C3->length != md_size) {
+        goto free_ctext;
+    }
+
+    bn_len = BN_num_bytes(ctext_struct->C1x);
+    bn_len1 = BN_num_bytes(ctext_struct->C1y);
+    if (bn_len <= 0 || bn_len > SM2_MAX_KEY_BYTES || bn_len1 <= 0 || bn_len1 > SM2_MAX_KEY_BYTES) {
+        goto free_ctext;
+    }
+
+    len = (size_t)bn_len;
+    len1 = (size_t)bn_len1;
+    c2_len = (size_t)ctext_struct->C2->length;
+    c3_len = (size_t)ctext_struct->C3->length;
+    if ((c2_len && !ctext_struct->C2->data) || (c3_len && !ctext_struct->C3->data)) {
+        goto free_ctext;
+    }
+
+    if (len > SIZE_MAX - len1)
+        goto free_ctext;
+    total_len = len + len1;
+    if (total_len > SIZE_MAX - c3_len)
+        goto free_ctext;
+    total_len += c3_len;
+    if (total_len > SIZE_MAX - c2_len)
+        goto free_ctext;
+    total_len += c2_len;
+    if (total_len > UINT_MAX)
+        goto free_ctext;
+
+    c1->x.data = malloc(total_len);
     if (!c1->x.data) {
         goto free_ctext;
     }
     c1->y.data = c1->x.data + len;
     c3->data = c1->y.data + len1;
-    c2->data = c3->data + ctext_struct->C3->length;
-    memcpy(c2->data, ctext_struct->C2->data, ctext_struct->C2->length);
-    memcpy(c3->data, ctext_struct->C3->data, ctext_struct->C3->length);
-    c2->dsize = ctext_struct->C2->length;
-    c3->dsize = ctext_struct->C3->length;
+    c2->data = c3->data + c3_len;
+    memcpy(c2->data, ctext_struct->C2->data, c2_len);
+    memcpy(c3->data, ctext_struct->C3->data, c3_len);
+    c2->dsize = (__u32)c2_len;
+    c3->dsize = (__u32)c3_len;
     c1->x.dsize = BN_bn2bin(ctext_struct->C1x, (void *)c1->x.data);
     c1->y.dsize = BN_bn2bin(ctext_struct->C1y, (void *)c1->y.data);
 
@@ -1242,7 +1284,7 @@ static int hpre_sm2_decrypt(EVP_PKEY_CTX *ctx, unsigned char *out, size_t *outle
     ret = get_dev_by_sync_mode(inlen);
     md = (smctx->ctx.md == NULL) ? EVP_sm3() : smctx->ctx.md;
 
-    ret = sm2_cipher_ber_to_bin((void *)in, inlen, &c1, &c2, &c3);
+    ret = sm2_cipher_ber_to_bin(md, (void *)in, inlen, &c1, &c2, &c3);
     if (!ret)
         goto do_soft;
 
