@@ -48,7 +48,7 @@ The software packages, release documents, and product documents have been scanne
 
 ### Precautions
 
-For details, see *Kunpeng BoostKit 25.3.0 KUAF Installation Guide*.
+For details, see [Installation Guide](../en/installation_guide.md)
 
 ## V25.3.0
 
