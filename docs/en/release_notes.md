@@ -48,7 +48,7 @@ The software packages, release documents, and product documents have been scanne
 
 ### Precautions
 
-For details, see [Installation Guide](../en/installation_guide.md)
+For details, see [Installation Guide](./installation_guide.md)
 
 ## V25.3.0
 
