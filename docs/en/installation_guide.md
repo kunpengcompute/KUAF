@@ -17,7 +17,7 @@ Install KAE first, and then install KUAF as follows. After the installation is c
 
 **Installing KUAF<a name="section68113416198"></a>**
 
-1. Install KAE. For details, see [Kunpeng Accelerator Engine User Guide](https://www.hikunpeng.com/document/detail/en/kunpengaccel/kae/usermanual/kunpengaccel_16_0002.html).
+1. Install KAE. For details, see [Kunpeng Accelerator Engine Installation Guide](https://www.hikunpeng.com/document/detail/en/kunpengaccel/kae/kae/docs/en/installation_guide.md).
 
 2. Download the KUAF source package, copy it to a custom directory, and decompress it.
 

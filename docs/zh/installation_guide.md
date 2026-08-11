@@ -17,7 +17,7 @@
 
 **安装步骤<a name="section68113416198"></a>**
 
-1. 请参见《[KAE 安装指南](https://gitcode.com/boostkit/KAE/blob/kae2/docs/zh/installation_guide.md)》对KAE进行安装。
+1. 请参见《[KAE 安装指南](https://www.hikunpeng.com/document/detail/zh/kunpengaccel/kae/kae/docs/zh/installation_guide.md)》对KAE进行安装。
 
 2. 通过以下命令下载KUAF源码将KUAF源码包拷贝到自定义路径下并解压。
 
